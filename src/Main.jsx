@@ -1,50 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { WebView } from 'react-native-webview';
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import Constants from 'expo-constants';
+import React, { useState, useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
+import { WebView } from 'react-native-webview';
 
-Notifications.setNotificationHandler({
-	handleNotification: async () => ({
-		shouldShowAlert: true,
-		shouldPlaySound: false,
-		shouldSetBadge: false,
-	}),
-});
-
-async function registerForPushNotificationsAsync() {
-	let token;
-
-	if (Platform.OS === 'android') {
-		Notifications.setNotificationChannelAsync('default', {
-			name: 'default',
-			importance: Notifications.AndroidImportance.MAX,
-			vibrationPattern: [0, 250, 250, 250],
-			lightColor: '#FF231F7C',
-		});
-	}
-
-	if (Device.isDevice) {
-		const { status: existingStatus } = await Notifications.getPermissionsAsync();
-		let finalStatus = existingStatus;
-		if (existingStatus !== 'granted') {
-			const { status } = await Notifications.requestPermissionsAsync();
-			finalStatus = status;
-		}
-		if (finalStatus !== 'granted') {
-			alert('Failed to get push token for push notification!');
-			return;
-		}
-		token = await Notifications.getExpoPushTokenAsync({
-			projectId: Constants.expoConfig.extra.eas.projectId,
-		});
-		console.log(token);
-	} else {
-		alert('Must use physical device for Push Notifications');
-	}
-
-	return token;
-}
+import { registerForPushNotificationsAsync, sendPushNotification } from '../utils/notifications';
+import { saveToSecureStorage, getFromSecureStorage } from '../utils/storage';
 
 function Main() {
 	const webView = useRef(null);
@@ -57,11 +17,9 @@ function Main() {
 	useEffect(() => {
 		if (Platform.OS === 'android') {
 			registerForPushNotificationsAsync().then(token => setExpoPushToken(token));
-
 			notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
 				setNotification(notification);
 			});
-
 			responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
 				console.log(response);
 			});
@@ -73,54 +31,22 @@ function Main() {
 		}
 	}, []);
 
-	async function sendPushNotification() {
-		try {
-			const message = {
-				to: expoPushToken.data,
-				sound: 'default',
-				title: 'Your Notification Title',
-				body: 'Your Notification Body',
-			};
-
-			const response = await fetch('https://exp.host/--/api/v2/push/send', {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Accept-encoding': 'gzip, deflate',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify(message),
-			});
-
-			const result = await response.json();
-			console.log(result);
-
-			alert('Push notification sent successfully.');
-		} catch (error) {
-			console.error('Error sending push notification:', error);
-			alert('Error sending push notification: ' + error.message);
-		}
-	}
-
-
 	function handleWebViewMessage(eventData) {
-		// const message = JSON.parse(eventData);
-		// message.action
-		if (eventData === 'saveData') {
-		// Save data to SecureStorage
-			console.log('saveData');
-		} else if (eventData === 'retrieveData') {
-		// Retrieve data from SecureStorage
-			console.log('retrieveData');
-		} else if (eventData === 'sendPushNotification') {
-			sendPushNotification();
+		const message = JSON.parse(eventData);
+
+		if (message.action === 'saveData') {
+			saveToSecureStorage('count', JSON.stringify(message.data));
+		} else if (message.action === 'retrieveData') {
+			getFromSecureStorage('count');
+		} else if (message.action === 'sendPushNotification') {
+			sendPushNotification(expoPushToken.data, 'Testing...', 'Notification body');
 		}
 	}
 
 	return (
 		<WebView
-			ref={webView}
 			source={{ uri: 'https://lasjdhu.github.io/react-js-page/' }}
+			ref={webView}
 			javaScriptEnabled={true}
 			onMessage={(event) => handleWebViewMessage(event.nativeEvent.data)}
 		/>
